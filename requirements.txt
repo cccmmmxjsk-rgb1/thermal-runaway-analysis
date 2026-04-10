@@ -1,0 +1,10 @@
+matplotlib
+openpyxl
+pandas
+plotly
+PyYAML
+scikit-learn
+seaborn
+squarify
+torch
+transformers
