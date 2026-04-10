@@ -24,7 +24,7 @@ if df['Trigger_Temperature'].dtype == 'object':
 mn_map = {
     'LFP': 0,
     'NCM-111': 0.33, 'NCM111': 0.33,
-    'NCM-523': 0.2, 'NCM523': 0.2,
+    'NCM-523': 0.3, 'NCM523': 0.3,
     'NCM-622': 0.2, 'NCM622': 0.2,
     'NCM-811': 0.1, 'NCM811': 0.1,
     'NCA': 0
