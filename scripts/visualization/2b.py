@@ -16,6 +16,7 @@ plt.rcParams['mathtext.default'] = 'regular'
 # [input price per 1M tokens, output price per 1M tokens, display name]
 pricing_db = {
     'gpt5':             [1.25, 10.00, 'GPT-5'],
+    'gemini2.5pro':     [1.25, 10.00, 'Gemini-2.5-Pro'],
     'deepseekr1':       [0.55, 2.19,  'DeepSeek-R1'],
     'deepseek-v3':      [0.14, 0.28,  'DeepSeek-V3'],
     'claude4':          [3.00, 15.00, 'Claude-4'],
@@ -28,7 +29,7 @@ pricing_db = {
 # Model order used in the comparison
 model_order = [
     'gpt5', 'deepseekr1', 'deepseek-v3', 'claude4',
-    'qwen-plus', 'GPT-4o', 'gemini2.5flash', 'qwen-trub'
+    'qwen-plus', 'GPT-4o', 'gemini2.5flash', 'qwen-trub','gemini2.5pro'
 ]
 
 # Token usage per paper
