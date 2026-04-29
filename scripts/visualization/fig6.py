@@ -1,7 +1,10 @@
 import os
+import warnings
 
-# 设置国内镜像
+# Suppress warnings and HuggingFace endpoint logs for silent execution
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+warnings.filterwarnings('ignore')
 
 import pandas as pd
 import numpy as np
@@ -16,10 +19,12 @@ import re
 import platform
 
 # ==========================================
-# 🔧 配置区域
+# Configuration (Supplementary Material Standard)
 # ==========================================
-FILE_PATH = r"/Users/ctt/Desktop/scripts/data/tsne_analysis_data.xlsx"
-SAVE_DIR = r"/Users/ctt/Desktop/scripts/visualization"
+# Relative path to the dataset
+FILE_PATH = r"../data/tsne_analysis_data.xlsx"
+# Save outputs to the current working directory
+SAVE_DIR = r"."
 REPORT_FILE = os.path.join(SAVE_DIR, "Deep_Analysis_Report.txt")
 
 TARGET_CATHODES_LIST = [
@@ -47,10 +52,10 @@ COLUMN_MAPPING = {
 }
 
 # ==========================================
-# ✅ 特征配置
+# Feature Engineering Configuration
 # ==========================================
 
-# 这些字段继续做：单独 embedding -> 等权平均
+# Text fields for independent embedding followed by equal-weight averaging
 TEXT_EMBED_FIELDS = [
     'trigger_method',
     'electrolyte',
@@ -60,29 +65,27 @@ TEXT_EMBED_FIELDS = [
     'safety_design'
 ]
 
-# 这些字段改成独热编码
+# Fields for One-Hot Encoding
 ONEHOT_FIELDS = [
-    'cathode',       # 正极材料
-    'cell_format',   # 包装方式
-    'heating_side'   # 加热方式
+    'cathode',       
+    'cell_format',   
+    'heating_side'   
 ]
 
-# 数值字段
+# Numeric fields
 NUMERIC_FIELDS = ['capacity_clean']
 
-# 不同特征组的权重，可调
+# Adjustable weights for different feature modalities
 TEXT_WEIGHT = 1.0
 ONEHOT_WEIGHT = 1.0
 NUMERIC_WEIGHT = 1.0
 
 
 # ==========================================
-# 🛠️ 画图风格
+# Plotting Style Configuration
 # ==========================================
 def set_english_pub_style():
-    system = platform.system()
     font_family = ['Arial', 'Helvetica', 'DejaVu Sans', 'sans-serif']
-
     plt.rcParams['font.family'] = 'sans-serif'
     plt.rcParams['font.sans-serif'] = font_family
     plt.rcParams['axes.unicode_minus'] = False
@@ -96,14 +99,12 @@ def set_english_pub_style():
     plt.rcParams['grid.linestyle'] = ':'
     plt.rcParams['grid.alpha'] = 0.5
     plt.rcParams['svg.fonttype'] = 'none'
-    print(f"✅ Configured English Publication Style (System: {system})")
-
 
 set_english_pub_style()
 
 
 # ==========================================
-# 🧹 数据清洗
+# Data Cleaning & Preprocessing
 # ==========================================
 def clean_numeric(val):
     if pd.isna(val) or str(val).lower() in ['unknown', 'nan', 'none']:
@@ -113,11 +114,8 @@ def clean_numeric(val):
     match = re.search(r"(\d+(\.\d+)?)", str(val))
     return float(match.group(1)) if match else 0.0
 
-
 def load_data_all(file_path, mapping):
-    print(f"📖 Reading file: {file_path}")
     if not os.path.exists(file_path):
-        print("❌ File not found.")
         return None
 
     try:
@@ -125,8 +123,7 @@ def load_data_all(file_path, mapping):
             df = pd.read_csv(file_path)
         else:
             df = pd.read_excel(file_path)
-    except Exception as e:
-        print(f"❌ Error reading file: {e}")
+    except Exception:
         return None
 
     df = df.rename(columns=mapping)
@@ -135,11 +132,11 @@ def load_data_all(file_path, mapping):
         if internal_name not in df.columns:
             df[internal_name] = np.nan
 
-    # 数值清洗
+    # Clean numeric columns
     for col in ['capacity', 't_trigger', 't_max']:
         df[f'{col}_clean'] = df[col].apply(clean_numeric)
 
-    # 非 clean 列都转成文本
+    # Convert non-clean columns to string
     for col in df.columns:
         if col.endswith('_clean'):
             continue
@@ -149,13 +146,12 @@ def load_data_all(file_path, mapping):
 
 
 # ==========================================
-# 🤖 Embedding
+# Text Embedding Computation
 # ==========================================
 def mean_pooling(model_output, attention_mask):
     token_embeddings = model_output[0]
     input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-
 
 def load_embedding_model():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -165,19 +161,15 @@ def load_embedding_model():
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModel.from_pretrained(model_name).to(device)
         model.eval()
-        print(f"✅ Embedding model loaded on {device}")
         return tokenizer, model, device
-    except Exception as e:
-        print(f"❌ Failed to load model: {e}")
+    except Exception:
         return None, None, None
-
 
 def get_bert_embeddings(text_list, tokenizer, model, device, batch_size=32):
     if tokenizer is None or model is None:
         return None
 
     embeddings = []
-
     for i in range(0, len(text_list), batch_size):
         batch = text_list[i:i + batch_size]
         inputs = tokenizer(
@@ -195,38 +187,30 @@ def get_bert_embeddings(text_list, tokenizer, model, device, batch_size=32):
 
     return np.vstack(embeddings)
 
-
 def build_equal_weight_text_embeddings(df, fields, tokenizer, model, device):
     """
-    每个文本字段单独 embedding，再等权平均
+    Generate embeddings for each text field independently, then compute the equal-weight average.
     """
     if len(fields) == 0:
         return None
 
     field_embeddings = []
-
     for field in fields:
-        print(f"   🔹 Embedding text field: {field}")
         texts = [f"{field}: {value}" for value in df[field].astype(str).tolist()]
         emb = get_bert_embeddings(texts, tokenizer, model, device)
         if emb is None:
             return None
         field_embeddings.append(emb)
 
-    stacked = np.stack(field_embeddings, axis=0)   # [num_fields, n_samples, emb_dim]
+    stacked = np.stack(field_embeddings, axis=0)
     final_text_embeddings = np.mean(stacked, axis=0)
-
-    print(f"   ✅ Equal-weight text averaging complete: {len(fields)} fields")
     return final_text_embeddings
 
 
 # ==========================================
-# 🧩 One-Hot / Numeric
+# Categorical & Numeric Feature Processing
 # ==========================================
 def build_onehot_features(df, onehot_fields):
-    """
-    对指定字段做独热编码
-    """
     if len(onehot_fields) == 0:
         return None
 
@@ -236,50 +220,33 @@ def build_onehot_features(df, onehot_fields):
         prefix=onehot_fields,
         dummy_na=False
     )
-
-    onehot_array = onehot_df.astype(float).values
-    print(f"   ✅ One-hot complete: {onehot_array.shape[1]} dims from {onehot_fields}")
-    return onehot_array
-
+    return onehot_df.astype(float).values
 
 def build_numeric_features(df, numeric_fields):
-    """
-    数值字段单独标准化
-    """
     if len(numeric_fields) == 0:
         return None
 
     num_data = df[numeric_fields].values.astype(float)
     scaler = StandardScaler()
-    num_vecs = scaler.fit_transform(num_data)
-    print(f"   ✅ Numeric scaling complete: {numeric_fields}")
-    return num_vecs
-
+    return scaler.fit_transform(num_data)
 
 def combine_features(text_features=None, onehot_features=None, numeric_features=None,
                      text_weight=1.0, onehot_weight=1.0, numeric_weight=1.0):
-    """
-    拼接最终特征
-    """
     features = []
-
     if text_features is not None:
         features.append(text_features * text_weight)
-
     if onehot_features is not None:
         features.append(onehot_features * onehot_weight)
-
     if numeric_features is not None:
         features.append(numeric_features * numeric_weight)
 
     if len(features) == 0:
         return None
-
     return np.hstack(features)
 
 
 # ==========================================
-# 📊 绘图
+# Visualization (t-SNE Plot)
 # ==========================================
 def plot_tsne(df, x_col, y_col, hue_col, save_path, cathode_group_name):
     plt.figure(figsize=(12, 10))
@@ -306,21 +273,11 @@ def plot_tsne(df, x_col, y_col, hue_col, save_path, cathode_group_name):
             is_numeric = False
 
     if is_numeric:
-        print(f"   🎨 [{hue_col}] Gradient Plot (Plasma)...")
         palette = "plasma"
-
         sns.scatterplot(
-            data=plot_df,
-            x=x_col,
-            y=y_col,
-            hue=current_hue_col,
-            palette=palette,
-            s=120,
-            alpha=0.9,
-            edgecolor='white',
-            linewidth=0.6,
-            legend=False,
-            ax=ax
+            data=plot_df, x=x_col, y=y_col, hue=current_hue_col,
+            palette=palette, s=120, alpha=0.9, edgecolor='white',
+            linewidth=0.6, legend=False, ax=ax
         )
 
         if hue_col == 'cathode':
@@ -335,7 +292,6 @@ def plot_tsne(df, x_col, y_col, hue_col, save_path, cathode_group_name):
             ticks_labels = [k for k, v in sorted(CATHODE_ORDER_MAP.items(), key=lambda item: item[1])]
             cbar.set_ticks(ticks_locs)
             cbar.set_ticklabels(ticks_labels)
-
             cbar.ax.tick_params(labelsize=18)
             for tick in cbar.ax.get_yticklabels():
                 tick.set_fontsize(18)
@@ -350,32 +306,20 @@ def plot_tsne(df, x_col, y_col, hue_col, save_path, cathode_group_name):
             cbar.outline.set_visible(False)
 
     else:
-        print(f"   🎨 [{hue_col}] Categorical Plot (Deep)...")
         n_hues = plot_df[current_hue_col].nunique()
         palette = sns.color_palette("deep", n_hues) if n_hues <= 10 else sns.color_palette("husl", n_hues)
 
         sns.scatterplot(
-            data=plot_df,
-            x=x_col,
-            y=y_col,
-            hue=current_hue_col,
-            palette=palette,
-            s=120,
-            alpha=0.9,
-            edgecolor='white',
-            linewidth=0.6,
-            ax=ax
+            data=plot_df, x=x_col, y=y_col, hue=current_hue_col,
+            palette=palette, s=120, alpha=0.9, edgecolor='white',
+            linewidth=0.6, ax=ax
         )
 
         ncol_calc = min(5, n_hues) if n_hues > 0 else 1
         plt.legend(
-            bbox_to_anchor=(0.5, -0.15),
-            loc='upper center',
-            title=hue_col,
-            frameon=False,
-            ncol=ncol_calc,
-            fontsize=15,
-            title_fontsize=16
+            bbox_to_anchor=(0.5, -0.15), loc='upper center',
+            title=hue_col.capitalize(), frameon=False, ncol=ncol_calc,
+            fontsize=15, title_fontsize=16
         )
 
     for spine in ax.spines.values():
@@ -387,17 +331,9 @@ def plot_tsne(df, x_col, y_col, hue_col, save_path, cathode_group_name):
     plt.ylabel("t-SNE Component 2", fontsize=28, fontweight='bold', labelpad=12)
 
     ax.tick_params(
-        which='major',
-        direction='out',
-        length=6,
-        width=1.5,
-        colors='black',
-        top=False,
-        right=False,
-        left=True,
-        bottom=True,
-        pad=6,
-        labelsize=18
+        which='major', direction='out', length=6, width=1.5,
+        colors='black', top=False, right=False, left=True,
+        bottom=True, pad=6, labelsize=18
     )
 
     ax.xaxis.set_ticks_position('bottom')
@@ -406,15 +342,16 @@ def plot_tsne(df, x_col, y_col, hue_col, save_path, cathode_group_name):
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    
+    # Save as PNG and SVG
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     svg_path = save_path.replace('.png', '.svg')
     plt.savefig(svg_path, format='svg', bbox_inches='tight')
     plt.close()
-    print(f"   💾 Saved: {os.path.basename(save_path)}")
 
 
 # ==========================================
-# 📝 报告
+# Report Generation
 # ==========================================
 def write_analysis_to_txt(df, group_name, onehot_dim):
     mode = 'a' if os.path.exists(REPORT_FILE) else 'w'
@@ -455,17 +392,15 @@ def write_analysis_to_txt(df, group_name, onehot_dim):
             f.write("\n")
         f.write(f"    {'=' * 60}\n")
 
-    print(f"📝 Report saved: {REPORT_FILE}")
-
 
 # ==========================================
-# 🚀 主程序
+# Main Execution Flow
 # ==========================================
 def main():
     if os.path.exists(REPORT_FILE):
         try:
             os.remove(REPORT_FILE)
-        except:
+        except Exception:
             pass
 
     full_df = load_data_all(FILE_PATH, COLUMN_MAPPING)
@@ -478,38 +413,28 @@ def main():
 
     for group_idx, target_cathodes in enumerate(TARGET_CATHODES_LIST):
         group_name_str = "+".join(target_cathodes)
-        print(f"\n📦 Processing Group: {target_cathodes}")
 
         mask = full_df['cathode'].isin(target_cathodes)
         sub_df = full_df[mask].copy()
         n_samples = len(sub_df)
 
         if n_samples < 3:
-            print("⚠️ Not enough samples, skipped.")
             continue
 
-        # 1) 文本字段：单独 embedding 后等权平均
         text_features = build_equal_weight_text_embeddings(
-            sub_df,
-            TEXT_EMBED_FIELDS,
-            tokenizer,
-            model,
-            device
+            sub_df, TEXT_EMBED_FIELDS, tokenizer, model, device
         )
         if text_features is None:
             continue
 
-        # 2) one-hot 字段
         onehot_features = build_onehot_features(sub_df, ONEHOT_FIELDS)
         if onehot_features is None:
             continue
 
-        # 3) 数值字段
         numeric_features = build_numeric_features(sub_df, NUMERIC_FIELDS)
         if numeric_features is None:
             continue
 
-        # 4) 拼接最终特征
         final_features = combine_features(
             text_features=text_features,
             onehot_features=onehot_features,
@@ -542,18 +467,12 @@ def main():
             if hue_col not in sub_df.columns:
                 continue
             safe_group_name = group_name_str.replace(" ", "")[:30]
-            file_name = f"TSNE_{safe_group_name}_{hue_col}_analysis.png"
+            file_name = f"Figure_TSNE_{safe_group_name}_{hue_col}.png"
             plot_tsne(
-                sub_df,
-                'x',
-                'y',
-                hue_col,
+                sub_df, 'x', 'y', hue_col,
                 os.path.join(SAVE_DIR, file_name),
                 group_name_str
             )
-
-    print(f"\n✅ Analysis Complete! Check: {REPORT_FILE}")
-
 
 if __name__ == "__main__":
     main()
