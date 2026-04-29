@@ -1,38 +1,35 @@
 import os
-import warnings
-
-# Suppress warnings and HuggingFace endpoint logs for silent execution
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-warnings.filterwarnings('ignore')
-
-import pandas as pd
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
-import seaborn as sns
-from transformers import AutoTokenizer, AutoModel
-from sklearn.manifold import TSNE
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 import re
 import platform
 
-# ==========================================
-# Configuration (Supplementary Material Standard)
-# ==========================================
-# Relative path to the dataset
-FILE_PATH = r"../data/tsne_analysis_data.xlsx"
-# Save outputs to the current working directory
-SAVE_DIR = r"."
-REPORT_FILE = os.path.join(SAVE_DIR, "Deep_Analysis_Report.txt")
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 
+import numpy as np
+import pandas as pd
+import torch
+import matplotlib.pyplot as plt
+import matplotlib.path as mpltPath
+import matplotlib.patches as patches
+import matplotlib.patheffects as PathEffects
+import seaborn as sns
+from transformers import AutoTokenizer, AutoModel
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+# Input path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+data_file = os.path.join(current_dir, "..", "data", "tsne_analysis_data.xlsx")
+
+# Target cathode groups
 TARGET_CATHODES_LIST = [
     ['NCM811', 'NCM-622', 'NCM-General', 'NCM-111', 'NCM523', 'LFP'],
 ]
 
+# Variables highlighted in the plot
 HUE_LIST = ['cathode']
 
+# Column mapping
 COLUMN_MAPPING = {
     'cathode': 'cathode',
     'capacity': 'capacity',
@@ -51,62 +48,92 @@ COLUMN_MAPPING = {
     't_max': 't_max'
 }
 
-# ==========================================
-# Feature Engineering Configuration
-# ==========================================
+# Region definitions for confidence ellipses
+ELLIPSES_CONFIG = {
+    "Region 1 (Left Island)": {
+        "type": "rect",
+        "x_range": [-22, -10],
+        "y_range": [-18, -8],
+        "n_std": 2.5,
+        "color": "#455A64"
+    },
+    "Region 2 (Top Left)": {
+        "type": "rect",
+        "x_range": [-20, -5],
+        "y_range": [5, 20],
+        "n_std": 2.5,
+        "color": "#B7950B"
+    },
+    "Region 3 (Bottom Center)": {
+        "type": "rect",
+        "x_range": [-2, 12],
+        "y_range": [-16, 0],
+        "n_std": 2,
+        "color": "#A04000"
+    },
+    "Region 4 (Right Edge)": {
+        "type": "rect",
+        "x_range": [13, 22],
+        "y_range": [-12, 6],
+        "n_std": 3.5,
+        "color": "#6D4C41"
+    },
+    "Region 5 (Core Polygon)": {
+        "type": "poly",
+        "points": [
+            (-12, -8), (-12, 0), (-8, 8), (-5, 12), (5, 16),
+            (12, 14), (12, 5), (5, -2), (0, -5), (-5, -10)
+        ],
+        "n_std": 2.5,
+        "color": "#2E4053"
+    }
+}
 
-# Text fields for independent embedding followed by equal-weight averaging
-TEXT_EMBED_FIELDS = [
-    'trigger_method',
-    'electrolyte',
-    'separator',
-    'atmosphere',
-    'pressure',
-    'safety_design'
+# Custom annotation labels
+LABELS_CONFIG = [
+    {"text": "Safe/Suppressed (No Fire)\nEster Carbonates & Cooling", "x": -16.5, "y": -12.5, "size": 24, "color": "#2E4053"},
+    {"text": "~193°C Trigger (Stable)\nEC:EMC (3:7) System", "x": -13, "y": 11.5, "size": 24, "color": "#2E4053"},
+    {"text": "~150°C Low Trigger (Explosive)\nStandard EC/DEC/DMC", "x": 6, "y": -8.5, "size": 24, "color": "#2E4053"},
+    {"text": "~213°C High Trigger (Fire)\nEC:DEC:DMC / Commercial", "x": 14, "y": -2, "size": 24, "color": "#2E4053"},
+    {"text": "~211°C Trigger (LFP Band)\nLiPF6 Mixed / Solid-State Trials", "x": -1, "y": 1.5, "size": 24, "color": "#2E4053"},
 ]
 
-# Fields for One-Hot Encoding
-ONEHOT_FIELDS = [
-    'cathode',       
-    'cell_format',   
-    'heating_side'   
-]
-
-# Numeric fields
-NUMERIC_FIELDS = ['capacity_clean']
-
-# Adjustable weights for different feature modalities
-TEXT_WEIGHT = 1.0
-ONEHOT_WEIGHT = 1.0
-NUMERIC_WEIGHT = 1.0
+# Weight assigned to numeric variables in the fused feature space
+NUMERIC_WEIGHT = 4.0
 
 
-# ==========================================
-# Plotting Style Configuration
-# ==========================================
 def set_english_pub_style():
+    """Apply a publication-style figure format."""
     font_family = ['Arial', 'Helvetica', 'DejaVu Sans', 'sans-serif']
+
     plt.rcParams['font.family'] = 'sans-serif'
     plt.rcParams['font.sans-serif'] = font_family
     plt.rcParams['axes.unicode_minus'] = False
-    plt.rcParams['font.size'] = 18
-    plt.rcParams['axes.labelsize'] = 22
-    plt.rcParams['axes.titlesize'] = 24
-    plt.rcParams['xtick.labelsize'] = 18
-    plt.rcParams['ytick.labelsize'] = 18
-    plt.rcParams['legend.fontsize'] = 22
-    plt.rcParams['legend.title_fontsize'] = 24
+
+    plt.rcParams['font.size'] = 22
+    plt.rcParams['axes.labelsize'] = 30
+    plt.rcParams['axes.titlesize'] = 30
+    plt.rcParams['xtick.labelsize'] = 22
+    plt.rcParams['ytick.labelsize'] = 22
+    plt.rcParams['legend.fontsize'] = 18
+    plt.rcParams['legend.title_fontsize'] = 20
+
+    plt.rcParams['font.weight'] = 'bold'
+    plt.rcParams['axes.labelweight'] = 'bold'
+    plt.rcParams['axes.titleweight'] = 'bold'
+
     plt.rcParams['grid.linestyle'] = ':'
     plt.rcParams['grid.alpha'] = 0.5
     plt.rcParams['svg.fonttype'] = 'none'
 
+    print(f"Configured English publication style ({platform.system()})")
+
+
 set_english_pub_style()
 
 
-# ==========================================
-# Data Cleaning & Preprocessing
-# ==========================================
 def clean_numeric(val):
+    """Extract the first numeric value from a mixed-format field."""
     if pd.isna(val) or str(val).lower() in ['unknown', 'nan', 'none']:
         return 0.0
     if isinstance(val, (int, float)):
@@ -114,7 +141,10 @@ def clean_numeric(val):
     match = re.search(r"(\d+(\.\d+)?)", str(val))
     return float(match.group(1)) if match else 0.0
 
+
 def load_data_all(file_path, mapping):
+    """Load the dataset and standardize column names."""
+    print(f"Reading file: {file_path}")
     if not os.path.exists(file_path):
         return None
 
@@ -123,7 +153,8 @@ def load_data_all(file_path, mapping):
             df = pd.read_csv(file_path)
         else:
             df = pd.read_excel(file_path)
-    except Exception:
+    except Exception as e:
+        print(f"Error reading file: {e}")
         return None
 
     df = df.rename(columns=mapping)
@@ -132,46 +163,41 @@ def load_data_all(file_path, mapping):
         if internal_name not in df.columns:
             df[internal_name] = np.nan
 
-    # Clean numeric columns
-    for col in ['capacity', 't_trigger', 't_max']:
+    for col in ['t_trigger', 't_max', 'capacity']:
         df[f'{col}_clean'] = df[col].apply(clean_numeric)
 
-    # Convert non-clean columns to string
-    for col in df.columns:
-        if col.endswith('_clean'):
-            continue
+    exclude_cols = ['t_trigger', 't_max', 't_trigger_clean', 't_max_clean', 'capacity_clean']
+    text_cols = [c for c in df.columns if c not in exclude_cols]
+    for col in text_cols:
         df[col] = df[col].fillna('unknown').astype(str)
 
     return df
 
 
-# ==========================================
-# Text Embedding Computation
-# ==========================================
 def mean_pooling(model_output, attention_mask):
+    """Apply mean pooling to transformer token embeddings."""
     token_embeddings = model_output[0]
     input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
-def load_embedding_model():
+
+def get_bert_embeddings(text_list):
+    """Generate sentence embeddings using a transformer model."""
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_name = "sentence-transformers/all-mpnet-base-v2"
 
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModel.from_pretrained(model_name).to(device)
-        model.eval()
-        return tokenizer, model, device
-    except Exception:
-        return None, None, None
-
-def get_bert_embeddings(text_list, tokenizer, model, device, batch_size=32):
-    if tokenizer is None or model is None:
+    except Exception as e:
+        print(f"Error loading model: {e}")
         return None
 
     embeddings = []
-    for i in range(0, len(text_list), batch_size):
-        batch = text_list[i:i + batch_size]
+    model.eval()
+
+    for i in range(0, len(text_list), 32):
+        batch = text_list[i:i + 32]
         inputs = tokenizer(
             batch,
             padding=True,
@@ -182,87 +208,68 @@ def get_bert_embeddings(text_list, tokenizer, model, device, batch_size=32):
 
         with torch.no_grad():
             output = model(**inputs)
-            batch_embeddings = mean_pooling(output, inputs['attention_mask']).cpu().numpy()
-            embeddings.append(batch_embeddings)
+            embeddings.append(mean_pooling(output, inputs['attention_mask']).cpu().numpy())
 
     return np.vstack(embeddings)
 
-def build_equal_weight_text_embeddings(df, fields, tokenizer, model, device):
-    """
-    Generate embeddings for each text field independently, then compute the equal-weight average.
-    """
-    if len(fields) == 0:
-        return None
 
-    field_embeddings = []
-    for field in fields:
-        texts = [f"{field}: {value}" for value in df[field].astype(str).tolist()]
-        emb = get_bert_embeddings(texts, tokenizer, model, device)
-        if emb is None:
-            return None
-        field_embeddings.append(emb)
+def draw_confidence_ellipse(x, y, ax, n_std=2.5, edgecolor='#2E4053'):
+    """Draw a confidence ellipse for a selected region."""
+    if len(x) < 3:
+        return
 
-    stacked = np.stack(field_embeddings, axis=0)
-    final_text_embeddings = np.mean(stacked, axis=0)
-    return final_text_embeddings
+    cov = np.cov(x, y)
+    vals, vecs = np.linalg.eigh(cov)
+    order = vals.argsort()[::-1]
+    vals, vecs = vals[order], vecs[:, order]
 
+    theta = np.degrees(np.arctan2(*vecs[:, 0][::-1]))
+    width, height = 2 * n_std * np.sqrt(np.maximum(vals, 0))
 
-# ==========================================
-# Categorical & Numeric Feature Processing
-# ==========================================
-def build_onehot_features(df, onehot_fields):
-    if len(onehot_fields) == 0:
-        return None
-
-    onehot_df = pd.get_dummies(
-        df[onehot_fields].astype(str),
-        columns=onehot_fields,
-        prefix=onehot_fields,
-        dummy_na=False
+    ell_fill = patches.Ellipse(
+        xy=(np.mean(x), np.mean(y)),
+        width=width,
+        height=height,
+        angle=theta,
+        color=edgecolor,
+        alpha=0.08,
+        zorder=1
     )
-    return onehot_df.astype(float).values
+    ax.add_patch(ell_fill)
 
-def build_numeric_features(df, numeric_fields):
-    if len(numeric_fields) == 0:
-        return None
-
-    num_data = df[numeric_fields].values.astype(float)
-    scaler = StandardScaler()
-    return scaler.fit_transform(num_data)
-
-def combine_features(text_features=None, onehot_features=None, numeric_features=None,
-                     text_weight=1.0, onehot_weight=1.0, numeric_weight=1.0):
-    features = []
-    if text_features is not None:
-        features.append(text_features * text_weight)
-    if onehot_features is not None:
-        features.append(onehot_features * onehot_weight)
-    if numeric_features is not None:
-        features.append(numeric_features * numeric_weight)
-
-    if len(features) == 0:
-        return None
-    return np.hstack(features)
+    ell_edge = patches.Ellipse(
+        xy=(np.mean(x), np.mean(y)),
+        width=width,
+        height=height,
+        angle=theta,
+        edgecolor=edgecolor,
+        facecolor='none',
+        linestyle=(0, (5, 5)),
+        linewidth=2.2,
+        alpha=0.9,
+        zorder=100
+    )
+    ax.add_patch(ell_edge)
 
 
-# ==========================================
-# Visualization (t-SNE Plot)
-# ==========================================
 def plot_tsne(df, x_col, y_col, hue_col, save_path, cathode_group_name):
-    plt.figure(figsize=(12, 10))
+    """Plot the t-SNE projection with custom annotations and regions."""
+    fig, ax = plt.subplots(figsize=(12, 12))
     sns.set_style("white")
     set_english_pub_style()
-    ax = plt.gca()
+    ax.set_box_aspect(1)
 
-    CATHODE_ORDER_MAP = {
+    cathode_order_map = {
         'LFP': 0, 'NCM-111': 1, 'NCM523': 2,
         'NCM-General': 3, 'NCM-622': 4, 'NCM811': 5
     }
 
     plot_df = df.copy()
+    plot_df['outcome'] = pd.to_numeric(plot_df['outcome'], errors='coerce').fillna(0).astype(int)
+    tr_markers = {1: 'o', 0: 'X'}
 
     if hue_col == 'cathode':
-        plot_df['cathode_rank'] = plot_df['cathode'].map(CATHODE_ORDER_MAP)
+        plot_df['cathode_rank'] = plot_df['cathode'].map(cathode_order_map)
         plot_df = plot_df.dropna(subset=['cathode_rank'])
         current_hue_col = 'cathode_rank'
         is_numeric = True
@@ -274,177 +281,198 @@ def plot_tsne(df, x_col, y_col, hue_col, save_path, cathode_group_name):
 
     if is_numeric:
         palette = "plasma"
+
         sns.scatterplot(
-            data=plot_df, x=x_col, y=y_col, hue=current_hue_col,
-            palette=palette, s=120, alpha=0.9, edgecolor='white',
-            linewidth=0.6, legend=False, ax=ax
+            data=plot_df,
+            x=x_col,
+            y=y_col,
+            hue=current_hue_col,
+            palette=palette,
+            s=150,
+            alpha=0.3,
+            edgecolor=None,
+            legend=False,
+            ax=ax
         )
 
-        if hue_col == 'cathode':
-            norm = plt.Normalize(0, 5)
-            sm = plt.cm.ScalarMappable(cmap=palette, norm=norm)
-            sm.set_array([])
-            cbar = plt.colorbar(sm, ax=ax, fraction=0.046, pad=0.04)
-            cbar.set_label("Cathode Type (Ordered)", fontsize=22, fontweight='bold')
-            cbar.outline.set_visible(False)
-
-            ticks_locs = sorted(CATHODE_ORDER_MAP.values())
-            ticks_labels = [k for k, v in sorted(CATHODE_ORDER_MAP.items(), key=lambda item: item[1])]
-            cbar.set_ticks(ticks_locs)
-            cbar.set_ticklabels(ticks_labels)
-            cbar.ax.tick_params(labelsize=18)
-            for tick in cbar.ax.get_yticklabels():
-                tick.set_fontsize(18)
-                tick.set_fontweight('bold')
-        else:
-            norm = plt.Normalize(plot_df[current_hue_col].min(), plot_df[current_hue_col].max())
-            sm = plt.cm.ScalarMappable(cmap=palette, norm=norm)
-            sm.set_array([])
-            cbar = plt.colorbar(sm, ax=ax, fraction=0.046, pad=0.04)
-            cbar.set_label(f"{hue_col}", fontsize=18)
-            cbar.ax.tick_params(labelsize=16)
-            cbar.outline.set_visible(False)
-
+        sns.scatterplot(
+            data=plot_df,
+            x=x_col,
+            y=y_col,
+            hue=current_hue_col,
+            palette=palette,
+            style='outcome',
+            markers=tr_markers,
+            s=80,
+            alpha=1.0,
+            edgecolor='white',
+            linewidth=0.6,
+            legend=False,
+            ax=ax
+        )
     else:
         n_hues = plot_df[current_hue_col].nunique()
         palette = sns.color_palette("deep", n_hues) if n_hues <= 10 else sns.color_palette("husl", n_hues)
 
         sns.scatterplot(
-            data=plot_df, x=x_col, y=y_col, hue=current_hue_col,
-            palette=palette, s=120, alpha=0.9, edgecolor='white',
-            linewidth=0.6, ax=ax
+            data=plot_df,
+            x=x_col,
+            y=y_col,
+            hue=current_hue_col,
+            palette=palette,
+            s=150,
+            alpha=0.2,
+            edgecolor=None,
+            legend=False,
+            ax=ax
+        )
+
+        sns.scatterplot(
+            data=plot_df,
+            x=x_col,
+            y=y_col,
+            hue=current_hue_col,
+            palette=palette,
+            style='outcome',
+            markers=tr_markers,
+            s=80,
+            alpha=0.95,
+            edgecolor='white',
+            linewidth=0.6,
+            ax=ax
         )
 
         ncol_calc = min(5, n_hues) if n_hues > 0 else 1
-        plt.legend(
-            bbox_to_anchor=(0.5, -0.15), loc='upper center',
-            title=hue_col.capitalize(), frameon=False, ncol=ncol_calc,
-            fontsize=15, title_fontsize=16
+        legend = plt.legend(
+            bbox_to_anchor=(0.5, -0.15),
+            loc='upper center',
+            title=hue_col,
+            frameon=False,
+            ncol=ncol_calc,
+            fontsize=18
         )
+        if legend is not None:
+            plt.setp(legend.get_title(), fontsize=20, fontweight='bold')
+
+    points_all = plot_df[[x_col, y_col]].values
+    for _, config in ELLIPSES_CONFIG.items():
+        if config['type'] == 'rect':
+            x_min, x_max = config['x_range']
+            y_min, y_max = config['y_range']
+            mask = (
+                (plot_df[x_col] >= x_min) & (plot_df[x_col] <= x_max) &
+                (plot_df[y_col] >= y_min) & (plot_df[y_col] <= y_max)
+            )
+        elif config['type'] == 'poly':
+            path = mpltPath.Path(config['points'])
+            mask = path.contains_points(points_all)
+        else:
+            continue
+
+        region_df = plot_df[mask]
+        if len(region_df) >= 3:
+            draw_confidence_ellipse(
+                region_df[x_col],
+                region_df[y_col],
+                ax,
+                n_std=config.get('n_std', 2.5),
+                edgecolor=config.get('color', '#2E4053')
+            )
+
+    for label_cfg in LABELS_CONFIG:
+        txt = ax.text(
+            x=label_cfg['x'],
+            y=label_cfg['y'],
+            s=label_cfg['text'],
+            fontsize=label_cfg.get('size', 24),
+            color=label_cfg.get('color', '#2E4053'),
+            fontweight='black',
+            horizontalalignment='center',
+            verticalalignment='center',
+            linespacing=1.2,
+            zorder=999
+        )
+        txt.set_path_effects([
+            PathEffects.withStroke(linewidth=5.5, foreground='white', alpha=0.92),
+            PathEffects.Normal()
+        ])
 
     for spine in ax.spines.values():
         spine.set_visible(True)
-        spine.set_linewidth(1.5)
+        spine.set_linewidth(1.8)
         spine.set_color('black')
 
-    plt.xlabel("t-SNE Component 1", fontsize=28, fontweight='bold', labelpad=12)
-    plt.ylabel("t-SNE Component 2", fontsize=28, fontweight='bold', labelpad=12)
+    plt.xlabel("t-SNE Component 1", fontsize=34, fontweight='black', labelpad=12)
+    plt.ylabel("t-SNE Component 2", fontsize=34, fontweight='black', labelpad=12)
 
     ax.tick_params(
-        which='major', direction='out', length=6, width=1.5,
-        colors='black', top=False, right=False, left=True,
-        bottom=True, pad=6, labelsize=18
+        which='major',
+        direction='out',
+        length=7,
+        width=1.6,
+        colors='black',
+        top=False,
+        right=False,
+        left=True,
+        bottom=True,
+        pad=6,
+        labelsize=24
     )
+
+    for tick in ax.get_xticklabels() + ax.get_yticklabels():
+        tick.set_fontweight('bold')
 
     ax.xaxis.set_ticks_position('bottom')
     ax.yaxis.set_ticks_position('left')
     ax.grid(True, linestyle='--', alpha=0.3)
 
     plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    
-    # Save as PNG and SVG
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    svg_path = save_path.replace('.png', '.svg')
-    plt.savefig(svg_path, format='svg', bbox_inches='tight')
+    plt.savefig(save_path, dpi=400, bbox_inches='tight')
+    plt.savefig(save_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
     plt.close()
 
 
-# ==========================================
-# Report Generation
-# ==========================================
-def write_analysis_to_txt(df, group_name, onehot_dim):
-    mode = 'a' if os.path.exists(REPORT_FILE) else 'w'
-    detail_cols = [
-        'cathode', 'capacity', 'trigger_method', 'cell_format', 'electrolyte',
-        'separator', 'atmosphere', 'pressure', 'safety_design', 'heating_side'
-    ]
-
-    with open(REPORT_FILE, mode, encoding='utf-8') as f:
-        f.write(f"\n{'=' * 80}\n")
-        f.write(f"🔬 Deep Analysis Report: {group_name}\n")
-        f.write(f"🕒 Time: {pd.Timestamp.now()}\n")
-        f.write(f"{'=' * 80}\n")
-
-        f.write("\n>>> Global Summary\n")
-        f.write(f"    Samples: {len(df)}\n")
-        f.write(f"    Text Embedding Fields (Equal Weight): {', '.join(TEXT_EMBED_FIELDS)}\n")
-        f.write(f"    One-Hot Fields: {', '.join(ONEHOT_FIELDS)}\n")
-        f.write(f"    One-Hot Dimension: {onehot_dim}\n")
-        f.write(f"    Numeric Fields: capacity_clean\n")
-        f.write(f"    {'-' * 60}\n")
-
-        if len(df) == 0:
-            f.write("    (No samples)\n")
-            return
-
-        for col in ['cathode', 'electrolyte', 'separator', 'heating_side', 'trigger_method', 'cell_format']:
-            top3 = df[col].value_counts().head(3).to_dict()
-            top3_str = ", ".join([f"{k}({v})" for k, v in top3.items()])
-            f.write(f"    - Top {col}: {top3_str}\n")
-
-        f.write(f"\n    📋 [Details - {len(df)} items]\n")
-        for idx, row in df.iterrows():
-            f.write(f"    🔸 [Index {idx}]\n")
-            for col_name in detail_cols:
-                val = str(row.get(col_name, 'N/A'))
-                f.write(f"        • {col_name:<15}: {val}\n")
-            f.write("\n")
-        f.write(f"    {'=' * 60}\n")
-
-
-# ==========================================
-# Main Execution Flow
-# ==========================================
 def main():
-    if os.path.exists(REPORT_FILE):
-        try:
-            os.remove(REPORT_FILE)
-        except Exception:
-            pass
-
-    full_df = load_data_all(FILE_PATH, COLUMN_MAPPING)
+    """Run the full embedding, projection, and plotting workflow."""
+    full_df = load_data_all(data_file, COLUMN_MAPPING)
     if full_df is None:
         return
 
-    tokenizer, model, device = load_embedding_model()
-    if tokenizer is None or model is None:
-        return
-
-    for group_idx, target_cathodes in enumerate(TARGET_CATHODES_LIST):
+    for target_cathodes in TARGET_CATHODES_LIST:
         group_name_str = "+".join(target_cathodes)
+        print(f"\nProcessing group: {target_cathodes}")
 
-        mask = full_df['cathode'].isin(target_cathodes)
-        sub_df = full_df[mask].copy()
+        sub_df = full_df[full_df['cathode'].isin(target_cathodes)].copy()
         n_samples = len(sub_df)
 
         if n_samples < 3:
             continue
 
-        text_features = build_equal_weight_text_embeddings(
-            sub_df, TEXT_EMBED_FIELDS, tokenizer, model, device
-        )
-        if text_features is None:
+        sentences = []
+        for _, row in sub_df.iterrows():
+            text = (
+                f"Cathode: {row['cathode']}. "
+                f"Capacity: {row['capacity']}. "
+                f"Format: {row['cell_format']}. "
+                f"Trigger: {row['trigger_method']}. "
+                f"Electrolyte: {row['electrolyte']}. "
+                f"Separator: {row['separator']}. "
+                f"Heating Side: {row['heating_side']}. "
+                f"Outcome: {row['outcome']}."
+            )
+            sentences.append(text)
+
+        text_vecs = get_bert_embeddings(sentences)
+        if text_vecs is None:
             continue
 
-        onehot_features = build_onehot_features(sub_df, ONEHOT_FIELDS)
-        if onehot_features is None:
-            continue
+        num_data = sub_df[['t_trigger_clean', 't_max_clean']].values
+        scaler = StandardScaler()
+        num_vecs = scaler.fit_transform(num_data)
 
-        numeric_features = build_numeric_features(sub_df, NUMERIC_FIELDS)
-        if numeric_features is None:
-            continue
+        final_features = np.hstack([text_vecs, num_vecs * NUMERIC_WEIGHT])
 
-        final_features = combine_features(
-            text_features=text_features,
-            onehot_features=onehot_features,
-            numeric_features=numeric_features,
-            text_weight=TEXT_WEIGHT,
-            onehot_weight=ONEHOT_WEIGHT,
-            numeric_weight=NUMERIC_WEIGHT
-        )
-
-        n_pca = min(50, n_samples - 1, final_features.shape[1])
+        n_pca = min(50, n_samples - 1)
         pca = PCA(n_components=n_pca)
         pca_res = pca.fit_transform(final_features)
 
@@ -461,18 +489,25 @@ def main():
         sub_df['x'] = coords[:, 0]
         sub_df['y'] = coords[:, 1]
 
-        write_analysis_to_txt(sub_df, group_name_str, onehot_dim=onehot_features.shape[1])
-
         for hue_col in HUE_LIST:
             if hue_col not in sub_df.columns:
                 continue
+
             safe_group_name = group_name_str.replace(" ", "")[:30]
-            file_name = f"Figure_TSNE_{safe_group_name}_{hue_col}.png"
+            file_name = f"tsne_{safe_group_name}_{hue_col}_analysis.png"
+            save_path = os.path.join(current_dir, file_name)
+
             plot_tsne(
-                sub_df, 'x', 'y', hue_col,
-                os.path.join(SAVE_DIR, file_name),
+                sub_df,
+                'x',
+                'y',
+                hue_col,
+                save_path,
                 group_name_str
             )
+
+    print("\nAnalysis complete.")
+
 
 if __name__ == "__main__":
     main()
