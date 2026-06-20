@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battery AI Knowledge Analysis Workspace</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; }
+        #app { display: flex; gap: 20px; max-width: 1400px; margin: 0 auto; height: 90vh; }
+        .control-panel { width: 380px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+        .form-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-weight: 600; font-size: 14px; color: #333; }
+        input[type="text"], select, textarea { padding: 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; }
+        textarea { resize: vertical; min-height: 100px; }
+        button { background-color: #1890ff; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        button:hover { background-color: #40a9ff; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .btn-clear { background-color: #ff4d4f; margin-top: 5px; font-size: 12px; padding: 6px; }
+        .btn-clear:hover { background-color: #ff7875; }
+        .checkbox-group { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+        .checkbox-group label { font-weight: normal; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+        .checkbox-disabled { color: #999; cursor: not-allowed !important; }
+        .report-panel { flex: 1; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); display: flex; flex-direction: column; overflow-y: auto; }
+        .chat-message { margin-bottom: 20px; padding: 15px; border-radius: 8px; line-height: 1.6; font-size: 15px; }
+        .msg-user { background-color: #e6f7ff; border-left: 4px solid #1890ff; }
+        .msg-ai { background-color: #f6ffed; border-left: 4px solid #52c41a; }
+        .msg-error { background-color: #fff2f0; border-left: 4px solid #ff4d4f; color: #ff4d4f; }
+        .loading-text { color: #888; font-style: italic; margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+        .spinner { width: 16px; height: 16px; border: 2px solid #ccc; border-top-color: #1890ff; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="control-panel">
+        <h2>🔋 AI Workspace Settings</h2>
+
+        <div class="form-group">
+            <label>⚙️ Model Engine</label>
+            <select v-model="config.modelType">
+                <option value="ollama">Local Runtime (Ollama)</option>
+                <option value="api">Cloud API (DeepSeek/OpenAI compatible)</option>
+            </select>
+        </div>
+
+        <template v-if="config.modelType === 'api'">
+            <div class="form-group"><label>API Key</label><input type="text" v-model="config.apiKey" placeholder="sk-..."></div>
+            <div class="form-group"><label>API Base URL</label><input type="text" v-model="config.apiBaseUrl" placeholder="https://api.deepseek.com"></div>
+            <div class="form-group"><label>Model Name</label><input type="text" v-model="config.apiModelName" placeholder="deepseek-chat"></div>
+        </template>
+        <template v-if="config.modelType === 'ollama'">
+            <div class="form-group"><label>Local Model Name</label><input type="text" v-model="config.modelName" placeholder="llama3"></div>
+        </template>
+
+        <hr style="width: 100%; border: 0; border-top: 1px solid #eee;">
+
+        <div class="form-group">
+            <label>🔍 Knowledge Retrieval Engine</label>
+            <select v-model="config.retrievalMode">
+                <option value="sqlite">Structured Exact Query (SQLite Rule RAG)</option>
+                <option value="vector">Semantic Search (ChromaDB Vector Retrieval)</option>
+                <option value="graph">🕸️ Knowledge Graph Reasoning (GraphRAG)</option>
+            </select>
+        </div>
+
+        <div class="form-group" v-if="['sqlite', 'graph', 'vector'].includes(config.retrievalMode)">
+            <label>📂 Target Data Collections (multi-select)</label>
+            <div class="checkbox-group">
+                <div class="checkbox-group">
+                <label><input type="checkbox" value="battery_ncm" v-model="config.dbs"> NCM</label>
+                <label><input type="checkbox" value="battery_lfp" v-model="config.dbs"> LFP</label>
+                <label><input type="checkbox" value="battery_na" v-model="config.dbs"> Na-ion</label>
+                <label><input type="checkbox" value="battery_lco" v-model="config.dbs"> LCO</label>
+                <label><input type="checkbox" value="battery_lmo" v-model="config.dbs"> LMO</label>
+                <label><input type="checkbox" value="battery_nca" v-model="config.dbs"> NCA</label>
+                <label><input type="checkbox" value="battery_other" v-model="config.dbs"> Other</label>
+            </div>
+            </div>
+        </div>
+        <div class="form-group" v-if="config.retrievalMode === 'graph'">
+            <label>🕸️ Graph Reasoning Settings</label>
+            <div class="checkbox-group">
+                <label>
+                    <input type="checkbox" v-model="config.enableHybridRag">
+                    ⚡ Enable Hybrid RAG pruning with vector-based filtering
+                </label>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>🧠 Conversation Context</label>
+            <div class="checkbox-group">
+                <label><input type="checkbox" v-model="config.useMemory"> Enable conversation memory</label>
+                <label><input type="checkbox" v-model="config.evaluateSafety"> 🛡️ Include intrinsic safety and high-energy-density assessment</label>
+            </div>
+            <button v-if="config.useMemory && chatHistory.length > 0" @click="clearHistory" class="btn-clear" :disabled="isGenerating">🗑️ Clear Conversation Memory</button>
+        </div>
+
+        <div class="form-group" style="margin-top: auto;">
+            <label>📝 Analysis Prompt</label>
+            <textarea v-model="config.prompt" placeholder="Example: Compare the recorded thermal runaway trigger temperatures for high-nickel NCM batteries and summarize the underlying mechanisms."></textarea>
+            <button @click="runAnalysis" :disabled="isGenerating">[[ isGenerating ? 'Reasoning...' : '▶ Run Analysis' ]]</button>
+        </div>
+    </div>
+
+    <div class="report-panel" ref="reportPanel">
+        <h2 style="margin-top: 0;">📊 Analysis Results</h2>
+        <div v-if="chatHistory.length === 0 && !isGenerating" style="color: #999; text-align: center; margin-top: 50px;">
+            No conversation yet. Select data collections on the left and enter a prompt to begin.
+        </div>
+        <div v-for="(msg, index) in chatHistory" :key="index" class="chat-message" :class="getMsgClass(msg.role)">
+            <strong>[[ msg.role === 'user' ? '🧑 You' : (msg.role === 'error' ? '❌ Error' : '🤖 AI Expert') ]]:</strong>
+            <p style="white-space: pre-wrap; margin-top: 8px; margin-bottom: 0;">[[ msg.content ]]</p>
+        </div>
+        <div v-if="isGenerating" class="loading-text">
+            <div class="spinner"></div><span>Retrieving data and calling the model. Please wait...</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp } = Vue;
+    const app = createApp({
+        data() {
+            return {
+                config: {
+                    modelType: 'api',
+                    modelName: 'llama3',
+                    apiKey: '',
+                    apiBaseUrl: 'https://api.deepseek.com',
+                    apiModelName: 'deepseek-chat',
+                    retrievalMode: 'sqlite',
+                    dbs: ['battery_ncm'],
+                    useMemory: false,
+                    evaluateSafety: false,
+                    enableHybridRag: false,
+                    prompt: 'Compare the recorded thermal runaway trigger temperatures across battery systems and summarize the underlying mechanisms.'
+                },
+                isGenerating: false,
+                chatHistory: []
+            };
+        },
+        methods: {
+            getMsgClass(role) { return role === 'user' ? 'msg-user' : (role === 'error' ? 'msg-error' : 'msg-ai'); },
+            clearHistory() { this.chatHistory = []; },
+            scrollToBottom() { this.$nextTick(() => { const p = this.$refs.reportPanel; if (p) p.scrollTop = p.scrollHeight; }); },
+            async runAnalysis() {
+                if (!this.config.prompt.trim()) return alert('Please enter an analysis prompt.');
+                if (this.config.modelType === 'api' && !this.config.apiKey) return alert('Please enter a cloud API key first.');
+
+                if (!this.config.useMemory) this.clearHistory();
+
+                const currentPrompt = this.config.prompt;
+                this.chatHistory.push({ role: 'user', content: currentPrompt });
+
+                const payload = { ...this.config, chatHistory: this.config.useMemory ? this.chatHistory.slice(0, -1) : [] };
+                this.config.prompt = '';
+                this.isGenerating = true;
+                this.scrollToBottom();
+
+                try {
+                    const res = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    // JSON responses are reserved for backend error payloads.
+                    const contentType = res.headers.get("content-type");
+                    if (contentType && contentType.includes("application/json")) {
+                        const errorData = await res.json();
+                        throw new Error(errorData.error || 'Unknown error');
+                    }
+                    if (!res.ok) throw new Error(`HTTP error status: ${res.status}`);
+
+                    // Add an empty AI message before receiving streamed text.
+                    this.chatHistory.push({ role: 'assistant', content: '' });
+                    const aiMessageIndex = this.chatHistory.length - 1;
+
+                    // Read the response stream incrementally.
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder('utf-8');
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        // Decode the stream chunk and append it to the latest AI message.
+                        const chunk = decoder.decode(value, { stream: true });
+                        this.chatHistory[aiMessageIndex].content += chunk;
+
+                        // Keep the newest content visible while streaming.
+                        this.scrollToBottom();
+                    }
+                } catch (e) {
+                    this.chatHistory.push({ role: 'assistant', content: `Analysis failed: ${e.message}` });
+                } finally {
+                    this.isGenerating = false;
+                    this.scrollToBottom();
+                }
+            }
+        }
+    });
+    app.config.compilerOptions.delimiters = ['[[', ']]'];
+    app.mount('#app');
+</script>
+</body>
+</html>

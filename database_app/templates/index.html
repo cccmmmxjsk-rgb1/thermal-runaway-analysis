@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AL-LLM Literature Mining and Analysis Hub</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f3f4f6; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .dashboard { text-align: center; max-width: 1200px; width: 100%; padding: 20px; }
+    h1 { color: #1f2937; margin-bottom: 10px; font-size: 2.2rem; }
+    p.subtitle { color: #6b7280; margin-bottom: 40px; font-size: 1.1rem; }
+    .card-container { display: flex; gap: 30px; justify-content: center; flex-wrap: wrap; }
+    .card { background: white; border-radius: 16px; padding: 40px 30px; width: 300px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); cursor: pointer; transition: transform 0.3s; text-decoration: none; display: flex; flex-direction: column; align-items: center; border: 2px solid transparent; }
+    .card:hover { transform: translateY(-5px); }
+    .card-battery:hover { border-color: #3b82f6; }
+    .card-propellant:hover { border-color: #f59e0b; }
+    .card-ai:hover { border-color: #8b5cf6; }
+    .icon { font-size: 4rem; margin-bottom: 20px; }
+    .card h2 { margin: 0 0 10px 0; color: #111827; font-size: 1.4rem; }
+    .card p { color: #6b7280; font-size: 0.95rem; line-height: 1.5; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="dashboard">
+    <h1>Scientific Literature Mining and Data Hub</h1>
+    <p class="subtitle">Core modules for the AL-LLM system</p>
+    <div class="card-container">
+      <a href="/battery" class="card card-battery">
+        <div class="icon">🔋</div><h2>Battery Thermal Runaway Database</h2><p>Structured experimental data management with nested paper-to-experiment views.</p>
+      </a>
+      <a href="/ai_workspace" class="card card-ai">
+        <div class="icon">🧠</div><h2>AI Knowledge Analysis Workspace</h2><p>Use local Ollama or cloud APIs for cross-database comparison, mechanism analysis, and prediction.</p>
+      </a>
+      <a href="#" class="card card-propellant">
+        <div class="icon">🚀</div><h2>Energetic Materials Mining System</h2><p>Vector storage and filtered retrieval for modification-method studies. Coming soon.</p>
+      </a>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Battery Thermal Runaway Database</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f3f4f6; margin: 0; padding: 30px; }
+    .container { max-width: 1400px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+    .nav-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 2px solid #e5e7eb; padding-bottom: 16px;}
+    .nav-left { display: flex; align-items: center; gap: 20px;}
+    .back-btn { text-decoration: none; color: #4b5563; font-weight: 600; display: flex; align-items: center; gap: 4px; transition: color 0.2s; font-size: 14px;}
+    .back-btn:hover { color: #2563eb; }
+    .tabs { display: flex; gap: 8px; }
+    .tab-btn { padding: 10px 20px; border: none; background: transparent; color: #6b7280; font-size: 16px; font-weight: 600; cursor: pointer; border-radius: 8px 8px 0 0; position: relative; transition: color 0.2s;}
+    .tab-btn:hover { color: #111827; background: #f9fafb;}
+    .tab-btn.active { color: #2563eb; }
+    .tab-btn.active::after { content: ''; position: absolute; bottom: -18px; left: 0; width: 100%; height: 2px; background: #2563eb; }
+    .tab-graph { color: #8b5cf6; }
+    .tab-graph.active::after { background: #8b5cf6; }
+
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; background: #f8fafc; padding: 12px 16px; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .search-box { position: relative; width: 400px; }
+    .search-box input { width: 100%; padding: 10px 14px; padding-right: 40px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 14px; outline: none; transition: border-color 0.2s; box-sizing: border-box; }
+    .search-box input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+    .search-box .shortcut-hint { position: absolute; right: 10px; top: 10px; color: #9ca3af; font-size: 12px; pointer-events: none; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;}
+    .col-config { position: relative; }
+    .col-btn { background: white; border: 1px solid #d1d5db; padding: 9px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #374151; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .col-btn.graph-btn { border-color: #c4b5fd; color: #6d28d9; background: #f5f3ff; }
+    .col-btn.graph-btn:hover { background: #ede9fe; }
+    .col-dropdown { position: absolute; right: 0; top: 45px; width: 280px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); z-index: 100; padding: 16px; }
+    .col-dropdown h4 { margin: 0 0 10px 0; font-size: 13px; color: #6b7280; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; }
+    .col-dropdown label { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: #374151; margin-bottom: 8px; cursor: pointer; }
+
+    .table-responsive { overflow-x: auto; border-radius: 8px; border: 1px solid #e5e7eb;}
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { background: #f9fafb; padding: 14px 16px; font-weight: 600; color: #4b5563; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+    td { padding: 14px 16px; border-bottom: 1px solid #e5e7eb; color: #1f2937; }
+    .master-row { cursor: pointer; transition: background-color 0.2s; }
+    .master-row:hover { background-color: #f3f4f6; }
+    .expand-icon { display: inline-block; width: 24px; height: 24px; text-align: center; line-height: 24px; border-radius: 4px; background: #e5e7eb; color: #374151; font-weight: bold; margin-right: 10px; transition: transform 0.2s; }
+    .expanded .expand-icon { transform: rotate(90deg); background: #2563eb; color: white; }
+    .doi-link { color: #2563eb; text-decoration: none; font-weight: 500; }
+    .detail-row { background-color: #f8fafc; }
+    .detail-row td { padding: 0; border-bottom: 2px solid #2563eb; }
+    .sub-table { margin: 16px 16px 16px 50px; width: calc(100% - 66px); background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 6px; border: 1px solid #e2e8f0; }
+    .sub-table th { background: #eff6ff; color: #1e40af; font-size: 13px; padding: 10px 16px; }
+    .sub-table td { font-size: 14px; padding: 10px 16px; }
+    button.btn-info { background: #0ea5e9; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: opacity 0.2s; white-space: nowrap; }
+    button.btn-info:hover { opacity: 0.8; }
+    button.btn-danger { background: #ef4444; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: opacity 0.2s; white-space: nowrap; margin-left: 6px; }
+    button.btn-danger:hover { background: #dc2626; }
+
+    .search-alert { background: #fffbeb; color: #b45309; padding: 10px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; border: 1px solid #fde68a; display: flex; align-items: center; gap: 8px;}
+    .empty-state { text-align: center; padding: 60px; color: #6b7280; }
+
+    #graph-container { width: 100%; height: 750px; background: #fdfdfd; border-radius: 8px; border: 1px solid #e5e7eb; margin-top: 10px; }
+
+    .drawer-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(17, 24, 39, 0.4); z-index: 1000; transition: opacity 0.3s; }
+    .drawer { position: fixed; top: 0; right: 0; width: 600px; height: 100vh; background: #fff; box-shadow: -4px 0 15px rgba(0,0,0,0.1); z-index: 1001; transform: translateX(100%); transition: transform 0.3s ease-in-out; display: flex; flex-direction: column; }
+    .drawer.open { transform: translateX(0); }
+    .drawer-header { padding: 20px 24px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; background: #f9fafb; }
+    .drawer-header h2 { margin: 0; font-size: 18px; color: #111827; }
+    .close-btn { background: none; border: none; font-size: 20px; color: #6b7280; cursor: pointer; }
+    .close-btn:hover { color: #ef4444; }
+    .drawer-body { padding: 24px; overflow-y: auto; flex: 1; }
+    .json-section { margin-bottom: 24px; }
+    .json-section h3 { margin: 0 0 12px 0; font-size: 15px; color: #1e40af; border-bottom: 1px solid #bfdbfe; padding-bottom: 6px; }
+    .kv-grid { display: grid; grid-template-columns: 140px 1fr; gap: 8px; font-size: 14px; margin-bottom: 8px; }
+    .kv-key { color: #6b7280; font-weight: 500; word-break: break-all; }
+    .kv-val { color: #111827; }
+    .kv-val-text { background: #f3f4f6; padding: 8px 12px; border-radius: 6px; font-size: 13.5px; line-height: 1.5; color: #374151; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div id="app" class="container">
+
+    <div class="nav-bar">
+      <div class="nav-left">
+        <a href="/" class="back-btn">← Back to Hub</a>
+        <div class="tabs">
+          <button class="tab-btn" :class="{active: currentType === 'ncm' && !searchQuery}" @click="switchTab('ncm')">NCM</button>
+          <button class="tab-btn" :class="{active: currentType === 'lfp' && !searchQuery}" @click="switchTab('lfp')">LFP</button>
+          <button class="tab-btn" :class="{active: currentType === 'na' && !searchQuery}" @click="switchTab('na')">Na-ion</button>
+          <button class="tab-btn" :class="{active: currentType === 'lco' && !searchQuery}" @click="switchTab('lco')">LCO</button>
+          <button class="tab-btn" :class="{active: currentType === 'lmo' && !searchQuery}" @click="switchTab('lmo')">LMO</button>
+          <button class="tab-btn" :class="{active: currentType === 'nca' && !searchQuery}" @click="switchTab('nca')">NCA</button>
+          <button class="tab-btn" :class="{active: currentType === 'other' && !searchQuery}" @click="switchTab('other')">Other</button>
+          <button class="tab-btn tab-graph" :class="{active: currentType === 'graph'}" @click="switchTab('graph')">🕸️ Knowledge Graph</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="search-box">
+        <input type="text" ref="searchInput" v-model="searchQuery" placeholder="Global search across nested mechanisms and parameters..." />
+        <span class="shortcut-hint">Cmd+F</span>
+      </div>
+
+      <div class="table-controls" v-show="currentType !== 'graph'" style="display: flex; gap: 10px; align-items: center;">
+        <button class="col-btn" @click="isEditMode = !isEditMode" :style="isEditMode ? 'border-color: #ef4444; color: #ef4444; background: #fef2f2;' : ''">
+          [[ isEditMode ? '🔓 Exit Edit Mode' : '🔒 Enable Edit Mode' ]]
+        </button>
+
+        <button class="col-btn" @click="expandAll" title="Expand all experiment groups in the current list">🔽 Expand All</button>
+        <button class="col-btn" @click="collapseAll" title="Collapse all experiment groups">🔼 Collapse All</button>
+
+        <div class="col-config">
+          <button class="col-btn" @click="toggleColPicker">⚙️ Column Settings</button>
+          <div class="col-dropdown" v-show="showColPicker">
+            <h4>Paper Columns</h4>
+            <label v-for="col in masterColsConfig" :key="col.key">
+              <input type="checkbox" :value="col.key" v-model="selectedMasterCols" :disabled="col.key === 'expand'"> [[ col.label ]]
+            </label>
+            <h4 style="margin-top: 15px;">Experiment Columns</h4>
+            <label v-for="col in subColsConfig" :key="col.key">
+              <input type="checkbox" :value="col.key" v-model="selectedSubCols"> [[ col.label ]]
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-config" v-show="currentType === 'graph'">
+        <button class="col-btn graph-btn" @click="toggleGraphPicker">⚙️ Graph Display Settings</button>
+        <div class="col-dropdown" v-show="showGraphPicker">
+          <h4>Node Types</h4>
+          <label><input type="checkbox" v-model="graphFilters.nodes.material" @change="handleNodeFilterChange('material')"> Cathode Materials</label>
+          <label><input type="checkbox" v-model="graphFilters.nodes.paper" @change="handleNodeFilterChange('paper')"> Papers</label>
+          <label><input type="checkbox" v-model="graphFilters.nodes.group" @change="handleNodeFilterChange('group')"> Experiment Groups</label>
+
+          <h4 style="margin-top: 15px;">Labels</h4>
+          <label><input type="checkbox" v-model="graphFilters.labels.material" @change="updateGraphView"> Material Labels</label>
+          <label><input type="checkbox" v-model="graphFilters.labels.paper" @change="updateGraphView"> Paper Labels</label>
+          <label><input type="checkbox" v-model="graphFilters.labels.group" @change="updateGraphView"> Group Labels</label>
+        </div>
+      </div>
+    </div>
+
+    <template v-if="currentType !== 'graph'">
+      <div v-if="searchQuery" class="search-alert">
+        🔍 Global cross-database search is active. Matching papers and experiment groups have been expanded automatically.
+      </div>
+
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th v-if="selectedMasterCols.includes('expand')" style="width: 80px;">Expand</th>
+              <th v-if="selectedMasterCols.includes('paper_id')">Paper DOI / ID</th>
+              <th v-if="selectedMasterCols.includes('exp_count')">Experiment Count</th>
+              <th v-if="selectedMasterCols.includes('actions') && isEditMode" style="width: 100px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="paper in displayPapers" :key="paper.paper_id">
+              <tr class="master-row" :class="{ 'expanded': isExpanded(paper.paper_id) }" @click="toggleExpand(paper.paper_id)">
+                <td v-if="selectedMasterCols.includes('expand')"><span class="expand-icon">▶</span></td>
+                <td v-if="selectedMasterCols.includes('paper_id')">
+                  <a :href="'https://doi.org/' + paper.paper_id" target="_blank" class="doi-link" @click.stop v-html="highlightText(paper.paper_id)"></a>
+                </td>
+                <td v-if="selectedMasterCols.includes('exp_count')">
+                  <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">[[ paper.experiments.length ]] groups</span>
+                </td>
+                <td v-if="selectedMasterCols.includes('actions') && isEditMode">
+                  <button class="btn-danger" @click.stop="deletePaper(paper.paper_id)">Delete Paper</button>
+                </td>
+              </tr>
+
+              <tr v-show="isExpanded(paper.paper_id)" class="detail-row">
+                <td :colspan="selectedMasterCols.length + (isEditMode && selectedMasterCols.includes('actions') ? 1 : 0)">
+                  <table class="sub-table">
+                    <thead>
+                      <tr>
+                        <th v-for="col in subColsConfig" :key="col.key" v-show="selectedSubCols.includes(col.key)">
+                          [[ col.label ]]
+                        </th>
+                        <th style="width: 160px;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="exp in paper.experiments" :key="exp.exp_id">
+                        <td v-show="selectedSubCols.includes('group_id')"><span v-html="highlightText(exp.group_id)"></span></td>
+                        <td v-show="selectedSubCols.includes('battery_type')">
+                          <span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: 500;"
+                                v-html="highlightText((exp.specific_material && exp.specific_material.cathode) ? exp.specific_material.cathode : (exp.battery_type ? exp.battery_type.toUpperCase() : 'Unknown'))">
+                          </span>
+                        </td>
+                        <td v-show="selectedSubCols.includes('T_onset')"><span v-html="highlightText(exp.T_onset ? exp.T_onset + ' °C' : '-')"></span></td>
+                        <td v-show="selectedSubCols.includes('T_trigger')"><span v-html="highlightText(exp.T_trigger ? exp.T_trigger + ' °C' : '-')"></span></td>
+                        <td v-show="selectedSubCols.includes('max_temperature')"><span v-html="highlightText(exp.max_temperature ? exp.max_temperature + ' °C' : '-')"></span></td>
+                        <td v-show="selectedSubCols.includes('time_to_TR')"><span v-html="highlightText(exp.time_to_TR ? exp.time_to_TR + ' s' : '-')"></span></td>
+                        <td>
+                          <button class="btn-info" @click="openDrawer(exp, paper.paper_id)">Details</button>
+                          <button v-show="isEditMode" class="btn-danger" @click="deleteExperiment(exp.exp_id, paper.paper_id)">Delete</button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </template>
+            <tr v-if="displayPapers.length === 0">
+              <td :colspan="selectedMasterCols.length + (isEditMode && selectedMasterCols.includes('actions') ? 1 : 0)" class="empty-state">
+                [[ searchQuery ? 'No matching records found' : 'No data available' ]]
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+    <div v-show="currentType === 'graph'">
+      <div style="margin-bottom: 10px; color: #6b7280; font-size: 14px;">
+        Tip: click a paper node to expand or collapse its experiment groups. Click an experiment-group node to inspect detailed parameters. Hover over nodes to highlight linked paths.
+      </div>
+      <div id="graph-container"></div>
+    </div>
+
+    <div class="drawer-overlay" v-show="drawerOpen" @click="closeDrawer"></div>
+    <div class="drawer" :class="{ 'open': drawerOpen }">
+      <div class="drawer-header" v-if="currentExp">
+        <h2>Details: <span v-html="highlightText(currentExp.group_id)"></span></h2>
+        <button class="close-btn" @click="closeDrawer">✕</button>
+      </div>
+
+      <div class="drawer-body" v-if="currentExp">
+        <div class="json-section" v-if="Object.keys(currentExp.basic_info || {}).length > 0">
+          <h3>📋 Basic Experiment Information</h3>
+          <div class="kv-grid" v-for="(val, key) in currentExp.basic_info" :key="key">
+            <div class="kv-key">[[ formatKey(key) ]]:</div>
+            <div class="kv-val">
+              <div v-if="formatDisplayValue(val).length > 40" class="kv-val-text" v-html="highlightText(formatDisplayValue(val))"></div>
+              <span v-else v-html="highlightText(formatDisplayValue(val))"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="json-section" v-if="Object.keys(currentExp.specific_material || {}).length > 0">
+          <h3>🧪 Material Information</h3>
+          <div class="kv-grid" v-for="(val, key) in currentExp.specific_material" :key="key">
+            <div class="kv-key">[[ formatKey(key) ]]:</div>
+            <div class="kv-val">
+              <div v-if="formatDisplayValue(val).length > 40" class="kv-val-text" v-html="highlightText(formatDisplayValue(val))"></div>
+              <span v-else v-html="highlightText(formatDisplayValue(val))"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="json-section" v-if="Object.keys(currentExp.boundary_and_thermal || {}).length > 0">
+          <h3>🔥 Boundary and Thermal Conditions</h3>
+          <div class="kv-grid" v-for="(val, key) in currentExp.boundary_and_thermal" :key="key">
+            <div class="kv-key">[[ formatKey(key) ]]:</div>
+            <div class="kv-val">
+              <div v-if="formatDisplayValue(val).length > 40" class="kv-val-text" v-html="highlightText(formatDisplayValue(val))"></div>
+              <span v-else v-html="highlightText(formatDisplayValue(val))"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="json-section" v-if="Object.keys(currentExp.mechanics || {}).length > 0">
+          <h3>⚙️ Failure Mechanism Analysis</h3>
+          <div class="kv-grid" v-for="(val, key) in currentExp.mechanics" :key="key">
+            <div class="kv-key">[[ formatKey(key) ]]:</div>
+            <div class="kv-val">
+              <div v-if="formatDisplayValue(val).length > 40" class="kv-val-text" v-html="highlightText(formatDisplayValue(val))"></div>
+              <span v-else v-html="highlightText(formatDisplayValue(val))"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="json-section" v-if="Object.keys(currentExp.observed_results_raw || {}).length > 0">
+          <h3>📈 Raw Observed Results</h3>
+          <div class="kv-grid" v-for="(val, key) in currentExp.observed_results_raw" :key="key">
+            <div class="kv-key">[[ formatKey(key) ]]:</div>
+            <div class="kv-val">
+              <div v-if="formatDisplayValue(val).length > 40" class="kv-val-text" v-html="highlightText(formatDisplayValue(val))"></div>
+              <span v-else v-html="highlightText(formatDisplayValue(val))"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp } = Vue;
+
+    function deepSearch(obj, keyword) {
+      if (obj === null || obj === undefined) return false;
+      if (typeof obj === 'string' || typeof obj === 'number') return String(obj).toLowerCase().includes(keyword.toLowerCase());
+      if (typeof obj === 'object') return Object.values(obj).some(val => deepSearch(val, keyword));
+      return false;
+    }
+
+    const app = createApp({
+      data() {
+        return {
+          isEditMode: false,
+          currentType: 'ncm',
+          allPapers: [],
+          expandedIds: [],
+          searchQuery: '',
+
+          showColPicker: false,
+          masterColsConfig: [
+            { key: 'expand', label: 'Expand Control' },
+            { key: 'paper_id', label: 'Paper DOI' },
+            { key: 'exp_count', label: 'Experiment Count' },
+            { key: 'actions', label: 'Actions' }
+          ],
+          selectedMasterCols: ['expand', 'paper_id', 'exp_count', 'actions'],
+          subColsConfig: [
+            { key: 'group_id', label: 'Experiment Group' },
+            { key: 'battery_type', label: 'Battery System' },
+            { key: 'T_onset', label: 'Onset Temperature' },
+            { key: 'T_trigger', label: 'Trigger Temperature' },
+            { key: 'max_temperature', label: 'Maximum Temperature' },
+            { key: 'time_to_TR', label: 'Time to Thermal Runaway' }
+          ],
+          selectedSubCols: ['group_id', 'battery_type', 'T_trigger', 'max_temperature'],
+
+          showGraphPicker: false,
+          rawGraphData: null,
+          graphChart: null,
+          expandedPaperId: null,
+          graphFilters: {
+            nodes: { material: true, paper: true, group: false },
+            labels: { material: true, paper: false, group: false }
+          },
+
+          drawerOpen: false,
+          currentExp: null
+        };
+      },
+
+      computed: {
+        displayPapers() {
+          const query = this.searchQuery.trim();
+          if (!query) {
+            let filtered = [];
+            this.allPapers.forEach(paper => {
+              let exps = paper.experiments.filter(e =>
+                (e.battery_type || 'other').toLowerCase() === this.currentType
+              );
+              if (exps.length > 0) filtered.push({ ...paper, experiments: exps });
+            });
+            return filtered;
+          }
+
+          let searchResults = [];
+          this.allPapers.forEach(paper => {
+            let paperMatches = paper.paper_id.toLowerCase().includes(query.toLowerCase());
+            let matchedExps = paper.experiments.filter(exp => deepSearch(exp, query));
+            if (paperMatches || matchedExps.length > 0) {
+              searchResults.push({ ...paper, experiments: paperMatches ? paper.experiments : matchedExps });
+            }
+          });
+          return searchResults;
+        }
+      },
+
+      watch: {
+        displayPapers(newVal) {
+          if (this.searchQuery.trim() && newVal.length > 0) {
+            this.expandedIds = newVal.map(p => p.paper_id);
+          }
+        }
+      },
+
+      methods: {
+        switchTab(type) {
+          this.currentType = type;
+          if (type !== 'graph') this.searchQuery = '';
+          this.expandedIds = [];
+
+          if (type === 'graph') {
+            this.$nextTick(() => { this.initGraphOnce(); });
+          }
+        },
+
+        async fetchAllData() {
+          try {
+            const res = await fetch(`/api/papers/all`);
+            this.allPapers = await res.json();
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        toggleColPicker() {
+          this.showColPicker = !this.showColPicker;
+          this.showGraphPicker = false;
+        },
+
+        toggleGraphPicker() {
+          this.showGraphPicker = !this.showGraphPicker;
+          this.showColPicker = false;
+        },
+
+        toggleExpand(id) {
+          const i = this.expandedIds.indexOf(id);
+          if (i > -1) this.expandedIds.splice(i, 1);
+          else this.expandedIds.push(id);
+        },
+
+        isExpanded(id) {
+          return this.expandedIds.includes(id);
+        },
+
+        expandAll() {
+          this.expandedIds = this.displayPapers.map(paper => paper.paper_id);
+        },
+
+        collapseAll() {
+          this.expandedIds = [];
+        },
+
+        formatKey(str) {
+          return str.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        },
+
+        formatDisplayValue(val) {
+          if (val === null || val === undefined || val === '') return '-';
+
+          if (typeof val === 'object') {
+            try {
+              return Object.entries(val)
+                .map(([k, v]) => {
+                  if (v !== null && typeof v === 'object') {
+                    return `${k}: ${JSON.stringify(v, null, 2)}`;
+                  }
+                  return `${k}: ${v ?? '-'}`;
+                })
+                .join(', ');
+            } catch (e) {
+              return String(val);
+            }
+          }
+
+          return String(val);
+        },
+
+        highlightText(text) {
+          if (text == null) return '-';
+          if (String(text).toLowerCase() === 'no gx') text = 'None';
+          const query = this.searchQuery.trim();
+          if (!query) return String(text);
+          const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+          return String(text).replace(
+            regex,
+            '<mark style="background-color: #fef08a; color: #1e3a8a; font-weight: 600; padding: 0 2px; border-radius: 2px;">$1</mark>'
+          );
+        },
+
+        openDrawer(exp, paperId) {
+          this.currentExp = exp;
+          this.drawerOpen = true;
+          document.body.style.overflow = 'hidden';
+        },
+
+        closeDrawer() {
+          this.drawerOpen = false;
+          setTimeout(() => { this.currentExp = null; }, 300);
+          document.body.style.overflow = 'auto';
+        },
+
+        async deletePaper(paperId) {
+          if (!confirm(`Warning: delete paper ${paperId} and all associated experiment data?\nThis also removes records from the database and cannot be undone.`)) return;
+
+          try {
+            const res = await fetch('/api/delete_data', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ type: 'paper', id: paperId })
+            });
+
+            if (res.ok) {
+              this.allPapers = this.allPapers.filter(p => p.paper_id !== paperId);
+            } else {
+              const err = await res.json();
+              alert(`Delete failed: ${err.error}`);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async deleteExperiment(expId, paperId) {
+          if (!confirm(`Delete this experiment group?`)) return;
+
+          try {
+            const res = await fetch('/api/delete_data', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ type: 'experiment', id: expId })
+            });
+
+            if (res.ok) {
+              const paper = this.allPapers.find(p => p.paper_id === paperId);
+              if (paper) {
+                paper.experiments = paper.experiments.filter(e => e.exp_id !== expId);
+                if (paper.experiments.length === 0) {
+                  this.allPapers = this.allPapers.filter(p => p.paper_id !== paperId);
+                }
+              }
+            } else {
+              const err = await res.json();
+              alert(`Delete failed: ${err.error}`);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        handleNodeFilterChange(level) {
+          const nodes = this.graphFilters.nodes;
+          if (level === 'material') {
+            if (!nodes.material) { nodes.paper = false; nodes.group = false; }
+            else { nodes.paper = true; nodes.group = true; }
+          } else if (level === 'paper') {
+            if (!nodes.paper) { nodes.group = false; }
+            else { nodes.group = true; nodes.material = true; }
+          } else if (level === 'group') {
+            if (nodes.group) { nodes.paper = true; nodes.material = true; }
+          }
+          this.updateGraphView();
+        },
+
+        async initGraphOnce() {
+          if (!this.graphChart) {
+            this.graphChart = echarts.init(document.getElementById('graph-container'));
+
+            this.graphChart.on('click', (params) => {
+              if (params.dataType === 'node') {
+                if (params.data.nodeType === 'paper') {
+                  this.expandedPaperId = (this.expandedPaperId === params.data.id) ? null : params.data.id;
+                  this.updateGraphView();
+                } else if (params.data.nodeType === 'group') {
+                  const clickedGroupId = params.data.name;
+                  let targetExp = null, targetPaperId = null;
+                  for (let paper of this.allPapers) {
+                    let exp = paper.experiments.find(e => e.group_id === clickedGroupId);
+                    if (exp) { targetExp = exp; targetPaperId = paper.paper_id; break; }
+                  }
+                  if (targetExp) {
+                    this.searchQuery = clickedGroupId;
+                    this.openDrawer(targetExp, targetPaperId);
+                  }
+                }
+              }
+            });
+
+            this.graphChart.showLoading();
+            try {
+              const response = await fetch('/api/graph_data');
+              this.rawGraphData = await response.json();
+              this.updateGraphView();
+            } catch (error) {
+              console.error("Failed to load graph data: ", error);
+            } finally {
+              this.graphChart.hideLoading();
+            }
+          }
+        },
+
+        updateGraphView() {
+          if (!this.graphChart || !this.rawGraphData) return;
+
+          const activeNodeTypes = Object.keys(this.graphFilters.nodes).filter(k => this.graphFilters.nodes[k]);
+
+          const baseColors = {
+            1: '#ef4444', 2: '#3b82f6', 3: '#f59e0b', 4: '#8b5cf6',
+            5: '#ec4899', 6: '#14b8a6', 7: '#64748b'
+          };
+
+          const chartDom = document.getElementById('graph-container');
+          const cx = chartDom.clientWidth / 2;
+          const cy = chartDom.clientHeight / 2;
+          const radius = Math.min(cx, cy) * 0.5;
+
+          const materialIds = ['mat_ncm', 'mat_lfp', 'mat_na', 'mat_lco', 'mat_lmo', 'mat_nca', 'mat_other'];
+          const anchors = {};
+          materialIds.forEach((matId, index) => {
+            const angle = (index * 2 * Math.PI) / materialIds.length - Math.PI / 2;
+            anchors[matId] = {
+              x: cx + radius * Math.cos(angle),
+              y: cy + radius * Math.sin(angle),
+              fixed: true
+            };
+          });
+
+          const filteredNodes = this.rawGraphData.nodes.filter(n => {
+            if (n.nodeType === 'material') return true;
+            if (n.nodeType === 'paper' && activeNodeTypes.includes('paper')) return true;
+            if (n.nodeType === 'group') {
+              if (activeNodeTypes.includes('group')) return true;
+              if (this.expandedPaperId === n.parentId) return true;
+            }
+            return false;
+          }).map(n => {
+            let size = 50;
+            if (n.nodeType === 'paper') size = 20;
+            if (n.nodeType === 'group') size = 12;
+
+            let opacity = 1.0;
+            if (n.nodeType === 'paper') opacity = 0.65;
+            if (n.nodeType === 'group') opacity = 0.35;
+
+            const baseColor = baseColors[n.category] || '#999';
+
+            let physicsProps = {};
+            if (n.nodeType === 'material' && anchors[n.id]) {
+              physicsProps = anchors[n.id];
+            }
+
+            return {
+              ...n,
+              ...physicsProps,
+              symbolSize: size,
+              itemStyle: {
+                color: baseColor,
+                opacity: opacity,
+                borderColor: baseColor,
+                borderWidth: n.nodeType === 'paper' && this.expandedPaperId === n.id ? 3 : 0,
+              },
+              emphasis: { focus: 'adjacency' },
+              label: {
+                show: this.graphFilters.labels[n.nodeType],
+                position: 'right',
+                distance: 8,
+                fontSize: 12,
+                formatter: '{b}',
+                backgroundColor: 'rgba(255,255,255,0.7)',
+                padding: [2, 4],
+                borderRadius: 4
+              }
+            };
+          });
+
+          const validNodeIds = new Set(filteredNodes.map(n => n.id));
+          const filteredLinks = this.rawGraphData.links
+            .filter(l => validNodeIds.has(l.source) && validNodeIds.has(l.target))
+            .map(l => ({
+              ...l,
+              silent: true,
+              emphasis: { disabled: true }
+            }));
+
+          const option = {
+            color: ['#999999', '#ef4444', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b'],
+            tooltip: {
+              formatter: function(params) {
+                if (params.dataType === 'edge') return undefined;
+                return params.name;
+              }
+            },
+            legend: {
+              data: [
+                "NCM System", "LFP System", "Na-ion System",
+                "LCO System", "LMO System", "NCA System", "Other Systems"
+              ],
+              top: 10,
+              textStyle: { fontSize: 14 },
+              selectedMode: true
+            },
+            series: [{
+              id: 'battery_graph',
+              type: 'graph',
+              layout: 'force',
+              data: filteredNodes,
+              links: filteredLinks,
+              categories: this.rawGraphData.categories,
+              roam: true,
+              force: {
+                repulsion: 60,
+                edgeLength: [15, 45],
+                gravity: 0.005,
+                friction: 0.2
+              },
+              lineStyle: { color: 'source', curveness: 0.2, opacity: 0.4 }
+            }]
+          };
+
+          this.graphChart.setOption(option);
+        }
+      },
+
+      mounted() {
+        this.fetchAllData();
+        window.addEventListener('keydown', (e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+            e.preventDefault();
+            this.$refs.searchInput?.focus();
+          }
+        });
+        document.addEventListener('click', (e) => {
+          if (this.showColPicker && !e.target.closest('.col-config')) this.showColPicker = false;
+          if (this.showGraphPicker && !e.target.closest('.col-config')) this.showGraphPicker = false;
+        });
+      }
+    });
+
+    app.config.compilerOptions.delimiters = ['[[', ']]'];
+    app.mount('#app');
+  </script>
+</body>
+</html>
